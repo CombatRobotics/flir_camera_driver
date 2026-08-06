@@ -30,22 +30,37 @@ example_parameters = {
         'adjust_timestamp': True,
         'dump_node_map': False,
         # set parameters defined in blackfly_s.yaml
-        'gain_auto': 'Continuous',
+        # 'gain_auto': 'Continous',
+        # 'gain': 0.0,
         # 'pixel_format': 'BayerRG8',
-        'exposure_auto': 'Continuous',
+        # auto OFF must precede exposure_time so ExposureTime is writable.
+        # 10000 us = multiple of 10 ms -> cancels 50 Hz (India) mains flicker.
+        # 'exposure_auto': 'Continous',
+        # 'exposure_time': 10000.0,
         # to use a user set, do this:
         # 'user_set_selector': 'UserSet0',
         # 'user_set_load': 'Yes',
-        # These are useful for GigE cameras
-        # 'device_link_throughput_limit': 380000000,
-        # 'gev_scps_packet_size': 9000,
+        # ---- GigE tuning for the TL-SG105E switch shared with the lidar.
+        # Unthrottled, the camera dumps each frame at line rate (~12 ms
+        # burst, then idle): that overruns the switch's small buffers and
+        # frames arrive INCOMPLETE (~25% loss at 20 fps). Flow control,
+        # which would prevent this, is off on that switch. Capping the
+        # link spreads each frame's packets over ~28 ms instead.
+        # Measured: 45 MB/s starves the stream (7 Hz), 115 MB/s drops
+        # frames again; 80 MB/s holds a clean 20 Hz alongside the Ouster.
+        # Raise if you increase resolution/frame rate, but expect losses
+        # past ~110 MB/s on this switch.
+        'device_link_throughput_limit': 80000000,
+        # Jumbo frames were tried and did NOT help (8000-byte packets still
+        # lost ~25% of frames), so this stays at the 1400 default.
+        'gev_scps_packet_size': 1400,
         # PTP for GigE cameras
         # 'gev_ieee_1588': True,
         # 'gev_ieee_1588_mode': 'SlaveOnly', # 'SlaveOnly',  #'Auto',
         # 'use_ieee_1588' : True,
         # ---- to reduce the sensor width and shift the crop
-        # 'image_width': 1408,
-        # 'image_height': 1080,
+        'image_width': 1440,
+        'image_height': 1080,
         # 'offset_x': 16,
         # 'offset_y': 0,
         # 'binning_x': 1,
@@ -54,7 +69,7 @@ example_parameters = {
         # 'reverse_x': True,
         # 'reverse_y': True,
         'frame_rate_auto': 'Off',
-        'frame_rate': 40.0,
+        'frame_rate': 20.0,
         'frame_rate_enable': True,
         'buffer_queue_size': 10,
         'trigger_mode': 'Off',
@@ -202,7 +217,7 @@ def generate_launch_description():
             ),
             LaunchArg(
                 'serial',
-                default_value="'20435008'",
+                default_value="'26215439'",
                 description='FLIR serial number of camera (in quotes!!)',
             ),
             LaunchArg(
