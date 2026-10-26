@@ -3,6 +3,11 @@
 #
 # This file maps the ros parameters to the corresponding Spinnaker "nodes" in the camera.
 # For more details on how to modify this file, see the README on camera configuration files.
+#
+# Entries marked "# ADDED" were appended for the VIO camera tests. The driver applies
+# parameters in the order of this file, so the added entries are placed after the
+# node that must be written first (e.g. *_auto before the value it unlocks).
+# Confirm the ADDED node paths once with dump_node_map: True on your firmware.
 
 parameters:
   #
@@ -28,6 +33,12 @@ parameters:
     # Some formats are e.g. "Mono8", "BayerRG8", "BGR8", "BayerRG16"
     # default is "BayerRG8"
     node: ImageFormatControl/PixelFormat
+  - name: binning_horizontal_mode # before binning_x: Sum / Average (Sum = brighter pixels)
+    type: enum
+    node: ImageFormatControl/BinningHorizontalMode
+  - name: binning_vertical_mode
+    type: enum
+    node: ImageFormatControl/BinningVerticalMode
   - name: binning_x
     type: int
     node: ImageFormatControl/BinningHorizontal
@@ -52,6 +63,9 @@ parameters:
   - name: reverse_y
     type: bool
     node: ImageFormatControl/ReverseY
+  - name: sharpening_enable # ADDED (ISP sharpening off for VIO)
+    type: bool
+    node: AnalogControl/SharpeningEnable # was ImageFormatControl/... which does not exist (camera GenICam XML)
 
   #
   # -------- analog control
@@ -63,6 +77,25 @@ parameters:
   - name: gain
     type: float
     node: AnalogControl/Gain
+  - name: gain_auto_lower_limit # ADDED
+    type: float
+    node: AutoAlgorithmControl/AutoExposureGainLowerLimit
+  - name: gain_auto_upper_limit # ADDED (Test 2 result)
+    type: float
+    node: AutoAlgorithmControl/AutoExposureGainUpperLimit
+  - name: black_level # ADDED (leave at factory default unless Test 5 dark frame fails)
+    type: float
+    node: AnalogControl/BlackLevel
+  - name: gamma_enable # ADDED (False for a linear pipeline)
+    type: bool
+    node: AnalogControl/GammaEnable
+  - name: gamma # ADDED (only used if gamma_enable is True)
+    type: float
+    node: AnalogControl/Gamma
+  - name: balance_white_auto # ADDED (run "Once" on a white wall, then "Off")
+    type: enum
+    # valid values: "Off", "Once", "Continuous"
+    node: AnalogControl/BalanceWhiteAuto
   #
   # -------- device link throughput limiting
   #
@@ -116,6 +149,29 @@ parameters:
   - name: exposure_time
     type: float
     node: AcquisitionControl/ExposureTime
+  - name: exposure_auto_lower_limit # ADDED (us)
+    type: float
+    node: AutoAlgorithmControl/AutoExposureExposureTimeLowerLimit
+  - name: exposure_auto_upper_limit # ADDED (us, Test 3 result)
+    type: float
+    node: AutoAlgorithmControl/AutoExposureExposureTimeUpperLimit
+  - name: ae_target_grey_auto # ADDED (must be "Off" before ae_target_grey is writable)
+    type: enum
+    # valid values: "Off", "Continuous"
+    node: AutoAlgorithmControl/AutoExposureTargetGreyValueAuto
+  - name: ae_target_grey # ADDED (percent, Test 4 Part A result)
+    type: float
+    node: AutoAlgorithmControl/AutoExposureTargetGreyValue
+  - name: ae_ev_compensation # ADDED (stops, keep 0)
+    type: float
+    node: AutoAlgorithmControl/AutoExposureEVCompensation
+  - name: ae_damping # ADDED (Test 4 Part B result)
+    type: float
+    node: AutoAlgorithmControl/AutoExposureControlLoopDamping
+  - name: ae_lighting_mode # ADDED (optional)
+    type: enum
+    # valid values: "AutoDetect", "Backlight", "Frontlight", "Normal"
+    node: AutoAlgorithmControl/AutoExposureLightingMode
   - name: frame_rate_enable
     type: bool
     node: AcquisitionControl/AcquisitionFrameRateEnable

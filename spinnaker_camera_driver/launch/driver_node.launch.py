@@ -27,52 +27,55 @@ example_parameters = {
     'blackfly_s': {
         'debug': False,
         'compute_brightness': False,
-        'adjust_timestamp': True,
-        'dump_node_map': False,
-        # set parameters defined in blackfly_s.yaml
-        # 'gain_auto': 'Continous',
-        # 'gain': 0.0,
-        # 'pixel_format': 'BayerRG8',
-        # auto OFF must precede exposure_time so ExposureTime is writable.
-        # 10000 us = multiple of 10 ms -> cancels 50 Hz (India) mains flicker.
-        # 'exposure_auto': 'Continous',
-        # 'exposure_time': 10000.0,
-        # to use a user set, do this:
-        # 'user_set_selector': 'UserSet0',
-        # 'user_set_load': 'Yes',
-        # ---- GigE tuning for the TL-SG105E switch shared with the lidar.
-        # Unthrottled, the camera dumps each frame at line rate (~12 ms
-        # burst, then idle): that overruns the switch's small buffers and
-        # frames arrive INCOMPLETE (~25% loss at 20 fps). Flow control,
-        # which would prevent this, is off on that switch. Capping the
-        # link spreads each frame's packets over ~28 ms instead.
-        # Measured: 45 MB/s starves the stream (7 Hz), 115 MB/s drops
-        # frames again; 80 MB/s holds a clean 20 Hz alongside the Ouster.
-        # Raise if you increase resolution/frame rate, but expect losses
-        # past ~110 MB/s on this switch.
-        'device_link_throughput_limit': 80000000,
-        # Jumbo frames were tried and did NOT help (8000-byte packets still
-        # lost ~25% of frames), so this stays at the 1400 default.
-        'gev_scps_packet_size': 1400,
-        # PTP for GigE cameras
-        # 'gev_ieee_1588': True,
-        # 'gev_ieee_1588_mode': 'SlaveOnly', # 'SlaveOnly',  #'Auto',
-        # 'use_ieee_1588' : True,
-        # ---- to reduce the sensor width and shift the crop
+        'adjust_timestamp': True,            # ignored while PTP is on
+        'frame_id': 'camera_optical_frame',
+        'dump_node_map': False,              # set True once to confirm the added node names below
+
+        # ---- image format
+        'pixel_format': 'Mono8',
         'image_width': 1440,
         'image_height': 1080,
-        # 'offset_x': 16,
-        # 'offset_y': 0,
-        # 'binning_x': 1,
-        # 'binning_y': 1,
-        # 'connect_while_subscribed': True,
-        # 'reverse_x': True,
-        # 'reverse_y': True,
+        'binning_x': 1,
+        'binning_y': 1,
+        'reverse_x': True,                   # calibration was done with these; keep
+        'reverse_y': True,
+
+        # ---- ISP (entries must exist in your copy of blackfly_s.yaml; see note)
+        'gamma_enable': False,
+        'sharpening_enable': False,
+        'balance_white_auto': 'Off',         # run 'Once' on a white wall first, then Off
+
+        # ---- exposure / gain: STATIC-TEST STATE (Tests 1, 2, 5)
+        'exposure_auto': 'Off',
+        'exposure_time': 50000.0,            # base for Test 2; adjust so the sheet reads 120-180 DN
+        'gain_auto': 'Off',
+        'gain': 0.0,
+        # ---- exposure / gain: DYNAMIC-TEST STATE (Tests 3, 4, 6) - swap in when you get there
+        # 'exposure_auto': 'Continuous',
+        # 'exposure_auto_upper_limit': 4000.0,     # Test 3 sets the final value
+        # 'exposure_auto_lower_limit': 50.0,
+        # 'gain_auto': 'Continuous',
+        # 'gain_auto_upper_limit': 18.0,           # Test 2 sets the final value
+        # 'ae_target_grey_auto': 'Off',
+        # 'ae_target_grey': 35.0,                  # Test 4 sets the final value
+        # 'ae_ev_compensation': 0.0,
+        # ae_damping: leave at camera default until Test 4
+
+        # ---- GigE (measured on the TL-SG105E shared with the LiDAR; keep)
+        'device_link_throughput_limit': 80000000,
+        'gev_scps_packet_size': 1400,
+        'gev_ieee_1588': True,
+        'gev_ieee_1588_mode': 'SlaveOnly',
+        'use_ieee_1588': True,
+
+        # ---- acquisition
         'frame_rate_auto': 'Off',
         'frame_rate': 20.0,
         'frame_rate_enable': True,
-        'buffer_queue_size': 10,
         'trigger_mode': 'Off',
+        'buffer_queue_size': 10,
+
+        # ---- chunks (keep)
         'chunk_mode_active': True,
         'chunk_selector_frame_id': 'FrameID',
         'chunk_enable_frame_id': True,
@@ -82,9 +85,11 @@ example_parameters = {
         'chunk_enable_gain': True,
         'chunk_selector_timestamp': 'Timestamp',
         'chunk_enable_timestamp': True,
+
+        # ---- diagnostics: was 39/41 (a 40 Hz leftover); camera runs at 20 Hz
         'diagnostic_period': 1.0,
-        'diagnostic_min_freq': 39.0,
-        'diagnostic_max_freq': 41.0
+        'diagnostic_min_freq': 19.0,
+        'diagnostic_max_freq': 21.0,
     },
     'blackfly': {
         'debug': False,
@@ -178,6 +183,24 @@ def launch_setup(context, *args, **kwargs):
         )
     if camera_type not in example_parameters:
         raise Exception('no example parameters available for type ' + camera_type)
+    # binning:=2 / 4 (default 1 = unchanged). Binning is locked while the camera streams, so it only takes
+    # effect at driver start. Width / height follow the full 1440x1080 sensor area. binning_mode:=Sum (default,
+    # brighter pixels) or Average (same brightness as full resolution).
+    binning = int(LaunchConfig('binning').perform(context))
+    binning_mode = LaunchConfig('binning_mode').perform(context)
+    if binning_mode not in ('Sum', 'Average'):
+        raise Exception('binning_mode must be Sum or Average, not ' + binning_mode)
+    overrides = {}
+    if binning != 1:
+        base = example_parameters[camera_type]
+        overrides = {
+            'binning_horizontal_mode': binning_mode,
+            'binning_vertical_mode': binning_mode,
+            'binning_x': binning,
+            'binning_y': binning,
+            'image_width': base['image_width'] // binning,
+            'image_height': base['image_height'] // binning,
+        }
 
     node = Node(
         package='spinnaker_camera_driver',
@@ -187,6 +210,7 @@ def launch_setup(context, *args, **kwargs):
         name=[LaunchConfig('camera_name')],
         parameters=[
             example_parameters[camera_type],
+            overrides,
             {
                 'ffmpeg_image_transport.encoding': 'hevc_nvenc',
                 'parameter_file': parameter_file,
@@ -219,6 +243,16 @@ def generate_launch_description():
                 'serial',
                 default_value="'26215439'",
                 description='FLIR serial number of camera (in quotes!!)',
+            ),
+            LaunchArg(
+                'binning',
+                default_value='1',
+                description='sensor binning 1 / 2 / 4; image size follows',
+            ),
+            LaunchArg(
+                'binning_mode',
+                default_value='Sum',
+                description='binning mode when binning != 1: Sum or Average',
             ),
             LaunchArg(
                 'parameter_file',
